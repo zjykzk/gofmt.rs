@@ -140,14 +140,12 @@ impl<'a, T: FnMut(usize, usize, &str), S: Source<'a>> Parser<'a, T, S> {
         let prev_pos = self.pos();
 
         self.scanner.next();
-        // self.debug("parse next");
 
         let tok = self.scanner.tok;
         if tok != Token::LineComment && tok != Token::FullComment {
             return tok;
         }
 
-        // println!("parse comment, prev:{:?}, now:{:?}", prev_pos, self.pos());
         let mut endline_of_comment = 0;
         if prev_pos.lineno == self.pos().lineno {
             endline_of_comment = self.consume_comment_group(0);
@@ -155,12 +153,6 @@ impl<'a, T: FnMut(usize, usize, &str), S: Source<'a>> Parser<'a, T, S> {
             if endline_of_comment != self.pos().lineno || tok == Token::Semi || tok == Token::EOF {
                 self.line_comment_index = Some((self.comments.len() - 1) as CommentIndex);
             }
-            // println!(
-            //     "parse line comment, endline:{:?}, tok:{:?}, index:{}",
-            //     endline_of_comment,
-            //     self.tok(),
-            //     self.line_comment_index.unwrap_or(-1),
-            // );
         }
 
         while let tok = self.tok()
@@ -173,14 +165,6 @@ impl<'a, T: FnMut(usize, usize, &str), S: Source<'a>> Parser<'a, T, S> {
             self.lead_comment_index = Some((self.comments.len() - 1) as CommentIndex);
         }
 
-        // println!(
-        //     "next token [{}], lit:[{}],pso:{:?}, line_comment:{}, lead_comment:{}",
-        //     self.scanner.tok,
-        //     self.scanner.lit,
-        //     self.pos(),
-        //     self.line_comment_index.unwrap_or(-1),
-        //     self.lead_comment_index.unwrap_or(-1)
-        // );
         self.scanner.tok
     }
 
@@ -229,7 +213,6 @@ impl<'a, T: FnMut(usize, usize, &str), S: Source<'a>> Parser<'a, T, S> {
 
         self.next();
         while self.tok() != Token::EOF {
-            // println!("current tok {:?}", self.scanner.tok);
             let h = self
                 .parser_of_tok
                 .get(&self.scanner.tok)
@@ -429,7 +412,7 @@ impl<'a, T: FnMut(usize, usize, &str), S: Source<'a>> Parser<'a, T, S> {
     fn param_list(&mut self) -> Result<ParamList<'a>> {
         let mut list = vec![];
         while self.tok() != Token::Rparen {
-            let dl = self.param_decl_or_param_list()?;
+            let dl = self.param_decl_or_param_list(!list.is_empty())?;
             match dl {
                 (Some(decl), None) => list.push((
                     decl,
@@ -450,6 +433,7 @@ impl<'a, T: FnMut(usize, usize, &str), S: Source<'a>> Parser<'a, T, S> {
     // returns the param list when only types.
     fn param_decl_or_param_list(
         &mut self,
+        need_decl: bool,
     ) -> Result<(Option<ParamDecl<'a>>, Option<ParamList<'a>>)> {
         match self.tok() {
             Token::Name => {
@@ -491,6 +475,14 @@ impl<'a, T: FnMut(usize, usize, &str), S: Source<'a>> Parser<'a, T, S> {
                             idents: None,
                             dotdotdot: None,
                             typ: self.qualified_name(ident)?,
+                        }),
+                        None,
+                    )),
+                    Token::Comma if need_decl => Ok((
+                        Some(ParamDecl {
+                            idents: None,
+                            dotdotdot: None,
+                            typ: Expression::Ident(Box::new(ident)),
                         }),
                         None,
                     )),
