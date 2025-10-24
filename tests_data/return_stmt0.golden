@@ -1,0 +1,12 @@
+return x{
+		x: x,
+	},
+	nil
+==================
+return x{
+		x: x,
+	},
+	x{
+		x: x,
+	},
+	nil

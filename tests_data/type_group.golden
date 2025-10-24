@@ -1,0 +1,5 @@
+type (
+	x    x
+	x    z
+	xxxx = x
+)

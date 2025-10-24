@@ -1,0 +1,23 @@
+package p
+
+//gofumpt:diagnose version: v0.0.0-20220727155840-8dda8068d9f3 (go1.18.29) flags: -lang=go1.16 -modpath=test
+-- foo.go.golden-devel --
+package p
+
+//gofumpt:diagnose version: (devel) (go1.18.29) flags: -lang=go1.16 -modpath=test
+-- foo.go.golden-extra --
+package p
+
+//gofumpt:diagnose version: v0.0.0-20220727155840-8dda8068d9f3 (go1.18.29) flags: -lang=go1.16 -modpath=test -extra
+-- foo.go.golden-lang --
+package p
+
+//gofumpt:diagnose version: v0.0.0-20220727155840-8dda8068d9f3 (go1.18.29) flags: -lang=go1 -modpath=test
+-- foo.go.golden-released --
+package p
+
+//gofumpt:diagnose version: v0.6.1-0.20240717113859-88a300bbd6dc (go1.18.29) flags: -lang=go1.16 -modpath=test
+-- foo.go.golden-external --
+package p
+
+//gofumpt:diagnose version: v0.6.1-0.20240717113859-88a300bbd6dc (go1.18.29) flags: -lang=go1.16 -modpath=

@@ -1,0 +1,10 @@
+if x; x {
+} else if x {
+} else {
+}
+==================
+if x; x {
+	x := x
+} else if x {
+} else {
+}

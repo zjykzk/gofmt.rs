@@ -1,0 +1,4 @@
+{
+	a = b //x
+	return &Code{Text: strings.Join(body, "\n")}
+}

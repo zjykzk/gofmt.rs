@@ -1,0 +1,12 @@
+package main
+
+func identList() {
+	i,
+		j,
+		k := 1,     2, 3
+
+	m := map[int]string{
+		1:    "x",
+		2222: "y",
+	}
+}

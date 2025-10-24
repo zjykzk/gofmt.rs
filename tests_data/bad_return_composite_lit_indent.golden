@@ -1,0 +1,7 @@
+func f() {
+	if !isAvailable {
+		return &list_platform.HasElementResponse{
+			Result_: make([]*list_platform.ExistData, 0),
+		}, nil
+	}
+}

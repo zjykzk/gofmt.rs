@@ -1,0 +1,10 @@
+const (
+	commaTerm exprListMode = 1 << iota // list is optionally terminated by a comma
+	noIndent                           // no extra indentation in multi-line lists
+	x
+)
+==================
+{
+	const r = 2.5                               // threshold
+	geomean := math.Exp(lnsum / float64(count)) // count > 0
+}

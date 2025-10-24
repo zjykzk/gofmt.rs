@@ -1,0 +1,25 @@
+[package]
+name = "gofmt"
+version = "0.1.0"
+edition =  "2024"
+
+[lib]
+crate-type = ["rlib"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+strum = { version = "0.25", features = ["derive"] }
+unic-ucd-category = "0.9"
+anyhow = { version = "1" }
+thiserror = { version = "2" }
+pretty_assertions = { version="1" }
+unicode-width = "0.2"
+libm = "0.2"
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "bench"
+harness = false

@@ -1,0 +1,25 @@
+func stripParens(x ast.Expr) ast.Expr {
+	if px, strip := x.(*ast.ParenExpr); strip {
+		// parentheses must not be stripped if there are any
+		// unparenthesized composite literals starting with
+		// a type name
+		ast.Inspect(px.X, func(node ast.Node) bool {
+			switch x := node.(type) {
+			case *ast.ParenExpr:
+				// parentheses protect enclosed composite literals
+				return false
+			case *ast.CompositeLit:
+				if isTypeName(x.Type) {
+					strip = false // do not strip parentheses
+				}
+				return false
+			}
+			// in all other cases, keep inspecting
+			return true
+		})
+		if strip {
+			return stripParens(px.X)
+		}
+	}
+	return x
+}

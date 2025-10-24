@@ -1,0 +1,25 @@
+package p
+
+func f() {
+	var x interface{}
+	switch x.(type) { // should remain the same
+	}
+	switch x.(type) { // should become: switch x.(type) {
+	}
+
+	switch x.(type) { // should remain the same
+	case int:
+	}
+	switch x.(type) { // should become: switch x.(type) {
+	case int:
+	}
+
+	switch x.(type) { // should remain the same
+	case []int:
+	}
+
+	switch t := x.(type) { // should remain the same
+	default:
+		_ = t
+	}
+}

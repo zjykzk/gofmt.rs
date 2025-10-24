@@ -1,0 +1,19 @@
+struct{}
+==================
+struct{ x }
+==================
+struct{ x }
+==================
+struct{ xx xxxxxxxxxxxxxxxxxxxxxxxxxxxxx }
+==================
+struct {
+	xx xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+}
+==================
+struct {
+	a int `json:"x"`
+	x x   `x:"x"`
+	X `x:"x"`
+
+	x x `x:"x"`
+}

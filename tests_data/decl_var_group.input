@@ -1,0 +1,13 @@
+var (
+x int = 1
+x
+
+
+x,x int=1,1
+x=1
+x int)
+==================
+var (
+                x x // x
+                y y // y
+            )

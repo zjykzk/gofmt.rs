@@ -1,0 +1,7 @@
+for k, v := range x {
+	x
+}
+==================
+for range x {
+	x
+}

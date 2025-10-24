@@ -1,0 +1,21 @@
+type x interface {
+	x |
+		x | ~x
+}
+==================
+interface{ x | x }
+==================
+interface {
+	x
+	x
+}
+==================
+interface {
+	x
+
+	x
+	x() x
+
+	xxx() x
+	x() (x, x)
+}

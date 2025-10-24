@@ -1,0 +1,10 @@
+type I interface {
+	// type elem
+	~int
+	// m
+	// m1
+	M(int) // x
+}
+==================
+type _ interface { //x
+}

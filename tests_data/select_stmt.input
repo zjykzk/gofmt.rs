@@ -1,0 +1,6 @@
+select {
+	case x:=<-x:
+	x;x
+	default:
+	x+=1
+}

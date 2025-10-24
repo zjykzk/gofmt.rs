@@ -1,0 +1,14 @@
+switch x:=1; x {
+		case x: {
+			x +=1; x
+			}
+		case x:
+			x+1
+			default:
+			x
+	}
+==================
+func f(e *ast.BinaryExpr) (has4, has5 bool, maxProblem int) {
+	switch    e.Op.Precedence() {
+	}
+}

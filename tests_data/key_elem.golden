@@ -1,0 +1,8 @@
+&fumpter{
+	file:    fset.File(file.Pos()),
+	fset:    fset,
+	astFile: file,
+	Options: opts,
+
+	minSplitFactor: 0.4,
+}

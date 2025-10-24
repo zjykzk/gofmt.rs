@@ -1,0 +1,5 @@
+{
+	if f.ModulePath == "" {
+		// Nothing to do.
+	}
+}

@@ -1,0 +1,10 @@
+            type s struct {
+    /*
+     * xdoc
+     */
+    x int `json:"x"`// x
+    // ydoc
+    yss int `json:"y"`// y
+    z int // z
+    Z // Z
+}

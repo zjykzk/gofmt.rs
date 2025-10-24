@@ -1,0 +1,9 @@
+func f()
+==================
+func f(int,
+
+) int
+==================
+func f(*y, x) (
+	*p.int, error,
+)

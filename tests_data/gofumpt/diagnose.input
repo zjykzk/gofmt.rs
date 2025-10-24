@@ -1,0 +1,11 @@
+package p
+
+//gofumpt:diagnose
+-- outdated.go --
+package p
+
+//gofumpt:diagnose v0.1.0
+-- nochange.go --
+package p
+
+//gofumpt:diagnosefoobar

@@ -1,0 +1,2 @@
+if err := f(someComplex{argument5, argument6, argument7, argument8, argument9, argument10}); err != nil {
+}

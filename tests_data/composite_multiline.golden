@@ -1,0 +1,27 @@
+var _ = []struct{ a int }{
+	{ // consistent
+		a: 1,
+	},
+	{
+		a: 2,
+	}, { // inconsistent
+		a: 3,
+	},
+}
+==================
+var _ = []struct{ a int }{{
+	a: 1,
+}, {
+	a: 2,
+}, {
+	a: 3,
+}}
+==================
+func _(struct {
+})
+==================
+type T struct {
+	Foo          // comment
+	Bar struct { // comment
+	}
+}
