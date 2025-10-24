@@ -1,5 +1,5 @@
 use criterion::{Criterion, criterion_group, criterion_main};
-use gosyn::formatter::format;
+use gofmt::formatter::format;
 use std::fmt::Write;
 
 fn array1(n: usize) -> String {
