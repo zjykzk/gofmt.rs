@@ -2,6 +2,12 @@
 
 A Rust implementation of Go language formatting, providing fast and accurate Go source code parsing and formatting capabilities.
 
+## NOT Supported yet
+
+[ ] comments
+
+[ ] simplify
+
 ## Features
 
 - **Complete Go Parser**: Full implementation of Go language parsing with proper AST generation
