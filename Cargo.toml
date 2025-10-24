@@ -1,7 +1,18 @@
 [package]
 name = "gofmt"
 version = "0.1.0"
-edition =  "2024"
+edition = "2024"
+license = "MIT"
+description = "gofmt implemention"
+repository = "https://github.com/zjykzk/gofmt.rs.git"
+readme = "README.md"
+
+include = [
+    "src/**/*",
+    "Cargo.toml",
+    "README.md",
+    "LICENSE*",
+]
 
 [lib]
 crate-type = ["rlib"]
