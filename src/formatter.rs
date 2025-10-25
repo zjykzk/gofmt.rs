@@ -2574,6 +2574,40 @@ impl<'a, W: io::Write> Formatter<W> for BranchStmt<'a> {
     }
 }
 
+impl<'a> ForStmt<'a> {
+    fn simplify_expr_of_range<'b>(expr: &'b Expression<'a>) -> Option<&'b Expression<'a>> {
+        if let Expression::Ident(i) = expr {
+            return if i.name == "_" { None } else { Some(expr) };
+        }
+
+        let Expression::ListExpr(l) = expr else {
+            return Some(expr);
+        };
+
+        if let Expression::Ident(i) = &l[0].0 {
+            return if i.name == "_" {
+                if let Expression::Ident(j) = &l[1].0
+                    && j.name == "_"
+                {
+                    None
+                } else {
+                    Some(expr)
+                }
+            } else {
+                if let Expression::Ident(j) = &l[1].0
+                    && j.name == "_"
+                {
+                    Some(&l[0].0)
+                } else {
+                    Some(expr)
+                }
+            };
+        }
+
+        Some(expr)
+    }
+}
+
 impl<'a, W: io::Write> Formatter<W> for ForStmt<'a> {
     fn format(&self, w: &mut W, ctx: &mut Context) -> io::Result<()> {
         Token::For.append_pos(self.pos).format(w, ctx)?;
@@ -2584,10 +2618,12 @@ impl<'a, W: io::Write> Formatter<W> for ForStmt<'a> {
             }
             ForOption::Range(r) => {
                 if let Some((expr, tp)) = &r.value {
-                    write_blank(w)?;
-                    expr.format(w, ctx)?;
-                    write_blank(w)?;
-                    tp.tok.format(w, ctx)?;
+                    if let Some(expr) = Self::simplify_expr_of_range(expr) {
+                        write_blank(w)?;
+                        expr.format(w, ctx)?;
+                        write_blank(w)?;
+                        tp.tok.format(w, ctx)?;
+                    }
                 }
                 write_blank(w)?;
                 Token::Range.format(w, ctx)?;

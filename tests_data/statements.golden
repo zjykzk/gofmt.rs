@@ -343,9 +343,9 @@ func _() {
 
 	for range a {
 	}
-	for _ = range a {
+	for range a {
 	}
-	for _, _ = range a {
+	for range a {
 	}
 	for i := range a {
 	}
@@ -402,7 +402,7 @@ func _() {
 	switch []T{} {
 	}
 
-	for _ = range []T{T{42}} {
+	for range []T{T{42}} {
 	}
 
 	// leave parentheses - composite literals start with a type name
@@ -425,7 +425,7 @@ func _() {
 	switch (T{}) {
 	}
 
-	for _ = range (T1{T{42}}) {
+	for range (T1{T{42}}) {
 	}
 
 	if x == (T{42}[0]) {
