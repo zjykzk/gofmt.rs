@@ -817,25 +817,39 @@ macro_rules! slice_on_stack {
 #[derive(Debug)]
 struct SliceOnStack<'a, 'b: 'a, const N: usize, T> {
     exprs_ref: [&'b Expression<'a>; N],
-    exprs: &'b Vec<(Expression<'a>, T)>,
+    exprs: &'b Vec<T>,
 }
 
-impl<'a, 'b: 'a, const N: usize, T> SliceOnStack<'a, 'b, N, T> {
-    fn new(exprs: &'b Vec<(Expression<'a>, T)>) -> Self {
-        SliceOnStack {
+impl<'b, 'a: 'b, F> AsRef<Expression<'a>> for (Expression<'a>, F) {
+    fn as_ref(&self) -> &Expression<'a> {
+        &self.0
+    }
+}
+
+impl<'b, 'a: 'b> AsRef<Expression<'a>> for Expression<'a> {
+    fn as_ref(&self) -> &Expression<'a> {
+        &self
+    }
+}
+
+impl<'a, 'b: 'a, const N: usize, T: AsRef<Expression<'a>>> SliceOnStack<'a, 'b, N, T> {
+    fn new(exprs: &'b Vec<T>) -> Self {
+        let mut s = SliceOnStack {
             exprs_ref: unsafe { MaybeUninit::uninit().assume_init() },
             exprs,
-        }
-    }
+        };
 
-    fn slice(&'b mut self) -> &'b [&'b Expression<'a>] {
         let mut i = 0;
-        for e in self.exprs {
-            self.exprs_ref[i] = &e.0;
+        for e in s.exprs {
+            s.exprs_ref[i] = e.as_ref();
             i += 1;
         }
 
-        &self.exprs_ref[..i]
+        s
+    }
+
+    fn slice(&'b self) -> &'b [&'b Expression<'a>] {
+        &self.exprs_ref[..self.exprs.len()]
     }
 }
 
@@ -865,6 +879,35 @@ impl<'a> ExprFormatter<'a> {
         Ok(())
     }
 
+    fn ignore_high_elem_if_len<'b>(
+        expr: &'b Expression<'a>,
+        indice: &'b [Expression<'a>],
+    ) -> &'b [Expression<'a>] {
+        if indice.len() == 5 {
+            return indice;
+        }
+        if let Expression::Ident(ei) = expr {
+            if let Expression::CallExpr(c) = &indice[indice.len() - 1] {
+                if let CallExpr {
+                    pexpr: Expression::Ident(i),
+                    args,
+                    ..
+                } = &**c
+                {
+                    if let (Expression::Ident(ai), _) = &args[0]
+                        && args.len() == 1
+                    {
+                        if i.name == "len" && ai.name == ei.name {
+                            return &indice[..indice.len() - 1];
+                        }
+                    }
+                }
+            }
+        }
+
+        indice
+    }
+
     fn format_slice<W: io::Write>(
         &self,
         s: &SliceExpr<'a>,
@@ -873,6 +916,7 @@ impl<'a> ExprFormatter<'a> {
     ) -> io::Result<()> {
         Self::format_expr(&s.expr, w, ctx, Precedence::Highest, 1)?;
         Token::Lbrack.append_pos(s.lbrack).format(w, ctx)?;
+        let indice = Self::ignore_high_elem_if_len(&s.expr, &s.indice);
         if self.depth > 1 {
             for i in &s.indice {
                 Self::format_expr(i, w, ctx, Precedence::None, self.depth + 1)?;
@@ -882,7 +926,7 @@ impl<'a> ExprFormatter<'a> {
             const COLON: u8 = 1;
             const BINARY: u8 = 2;
             const OTHER: u8 = 3;
-            for (i, e) in s.indice.iter().enumerate() {
+            for (i, e) in indice.iter().enumerate() {
                 flags[i + 1] = match e {
                     Expression::Operation(op) => {
                         if op.y.is_some() {
@@ -902,7 +946,7 @@ impl<'a> ExprFormatter<'a> {
                     .filter(|f| **f == BINARY || **f == OTHER)
                     .count()
                     > 1;
-            for (i, e) in s.indice.iter().enumerate() {
+            for (i, e) in indice.iter().enumerate() {
                 match flags[i + 1] {
                     COLON => {
                         if print_blank && flags[i] > COLON {
