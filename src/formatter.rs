@@ -779,7 +779,7 @@ impl<'a> ExprFormatter<'a> {
             Expression::ListExpr(e) => {
                 (ListExprFormatter {
                     depth: self.depth,
-                    ..ListExprFormatter::new(&e.iter().map(|(e, _)| e).collect::<Vec<_>>())
+                    ..ListExprFormatter::new(&e)
                 })
                 .format(w, ctx)?;
                 Ok(())
@@ -805,51 +805,6 @@ impl<'a> ExprFormatter<'a> {
             }
             Expression::Expr(e) => e.format(w, ctx),
         }
-    }
-}
-
-macro_rules! slice_on_stack {
-    ($list:expr, $size:literal) => {
-        SliceOnStack::<$size, _>::new($list).slice()
-    };
-}
-
-#[derive(Debug)]
-struct SliceOnStack<'a, 'b: 'a, const N: usize, T> {
-    exprs_ref: [&'b Expression<'a>; N],
-    exprs: &'b Vec<T>,
-}
-
-impl<'b, 'a: 'b, F> AsRef<Expression<'a>> for (Expression<'a>, F) {
-    fn as_ref(&self) -> &Expression<'a> {
-        &self.0
-    }
-}
-
-impl<'b, 'a: 'b> AsRef<Expression<'a>> for Expression<'a> {
-    fn as_ref(&self) -> &Expression<'a> {
-        &self
-    }
-}
-
-impl<'a, 'b: 'a, const N: usize, T: AsRef<Expression<'a>>> SliceOnStack<'a, 'b, N, T> {
-    fn new(exprs: &'b Vec<T>) -> Self {
-        let mut s = SliceOnStack {
-            exprs_ref: unsafe { MaybeUninit::uninit().assume_init() },
-            exprs,
-        };
-
-        let mut i = 0;
-        for e in s.exprs {
-            s.exprs_ref[i] = e.as_ref();
-            i += 1;
-        }
-
-        s
-    }
-
-    fn slice(&'b self) -> &'b [&'b Expression<'a>] {
-        &self.exprs_ref[..self.exprs.len()]
     }
 }
 
@@ -1014,7 +969,7 @@ impl<'a> ExprFormatter<'a> {
                 prev_pos: Some(index.lbrack),
                 next_pos: Some(index.rbrack),
                 add_comma_when_newline_of_last_expr: true,
-                ..ListExprFormatter::new(slice_on_stack!(le, 4))
+                ..ListExprFormatter::new(le)
             }
             .format(w, ctx)?;
         } else {
@@ -1080,7 +1035,7 @@ impl<'a> ExprFormatter<'a> {
             add_comma_when_newline_of_last_expr: true,
             prev_pos: Some(c.lparen),
             next_pos: dotdotdot_pos.or(Some(c.rparen)),
-            ..ListExprFormatter::new(slice_on_stack!(&c.args, 64))
+            ..ListExprFormatter::new(&c.args)
         })
         .format(w, ctx)?;
         if let Some(p) = dotdotdot_pos
@@ -1323,7 +1278,7 @@ impl<'a> ExprFormatter<'a> {
                 add_comma_when_newline_of_last_expr: true,
                 prev_pos: Some(c.lbrace),
                 next_pos: Some(c.rbrace),
-                ..ListExprFormatter::new(slice_on_stack!(&c.elem_list, 1024))
+                ..ListExprFormatter::new(&c.elem_list)
             })
             .format(w, ctx)?;
         }
@@ -2223,7 +2178,7 @@ impl<'a> TypeInstance<'a> {
                 add_comma_when_newline_of_last_expr: true,
                 prev_pos: Some(self.lbrack),
                 next_pos: Some(self.rbrack),
-                ..ListExprFormatter::new(slice_on_stack!(&self.type_args, 32))
+                ..ListExprFormatter::new(&self.type_args)
             }
             .format(w, ctx)?;
         } else {
@@ -2994,26 +2949,15 @@ impl<'a, W: io::Write> Formatter<W> for CaseCause<'a> {
                 ListExprFormatter {
                     prev_pos: Some(self.tok_pos.pos),
                     next_pos: Some(self.colon),
-                    ..ListExprFormatter::new(&l.iter().map(|(e, _)| e).collect::<Vec<_>>())
+                    ..ListExprFormatter::new(l)
                 }
                 .format(w, ctx)?;
             } else {
                 ExprFormatter::new(e).format(w, ctx)?;
             }
-            // match e {
-            //     Expression::ListExpr(l) => ListExprFormatter {
-            //         prev_pos: Some(self.tok_pos.pos),
-            //         next_pos: Some(self.colon),
-            //         ..ListExprFormatter::new(&l.iter().map(|(e, _)| e).collect::<Vec<_>>())
-            //     }
-            //     .format(w, ctx)?,
-            //     _ => ExprFormatter::new(e).format(w, ctx)?,
-            // }
         }
         Token::Colon.format(w, ctx)?;
         if !self.body.is_empty() {
-            // ctx.format_comments_when_newlines(w, &self.body[0].start(), true, &[BLANK])?;
-
             ctx.indent_count += 1;
             BlockStmtFormatter::format_stmts(self.body.as_slice(), w, ctx)?;
             ctx.indent_count -= 1;
@@ -3075,7 +3019,7 @@ impl<'a> ReturnStmt<'a> {
         ctx.indent_count += new_indents;
         ListExprFormatter {
             indent_when_newline: if new_indents > 0 { 0 } else { 1 },
-            ..ListExprFormatter::new(slice_on_stack!(l, 256))
+            ..ListExprFormatter::new(l)
         }
         .format(w, ctx)?;
         ctx.indent_count -= new_indents;
@@ -3168,7 +3112,7 @@ impl<'a, W: io::Write> Formatter<W> for AssignStmt<'a> {
             depth,
             prev_pos: Some(el.start()),
             next_pos: Some(self.op.pos),
-            ..ListExprFormatter::new(slice_on_stack!(el, 32))
+            ..ListExprFormatter::new(el)
         }
         .format(w, ctx)?;
         write_blank(w)?;
@@ -3184,7 +3128,7 @@ impl<'a, W: io::Write> Formatter<W> for AssignStmt<'a> {
         ListExprFormatter {
             depth,
             prev_pos: Some(self.op.pos),
-            ..ListExprFormatter::new(slice_on_stack!(vl, 32))
+            ..ListExprFormatter::new(vl)
         }
         .format(w, ctx)?;
         Ok(())
@@ -3426,12 +3370,24 @@ impl<'a> VarGroup<'a> {
     }
 }
 
+impl<'b, 'a: 'b, F> AsRef<Expression<'a>> for (Expression<'a>, F) {
+    fn as_ref(&self) -> &Expression<'a> {
+        &self.0
+    }
+}
+
+impl<'b, 'a: 'b> AsRef<Expression<'a>> for Expression<'a> {
+    fn as_ref(&self) -> &Expression<'a> {
+        &self
+    }
+}
+
 // format the expr list of assign&call expr&composite literal&ident list&return&index
 //
 // only do the indent when new line happened after one expr
 #[derive(Debug)]
-struct ListExprFormatter<'a, 'b: 'a> {
-    expr: &'a [&'b Expression<'a>], // MUST NOT empty
+struct ListExprFormatter<'a, T: AsRef<Expression<'a>>> {
+    expr: &'a [T], // MUST NOT empty
     prev_break: i32,
     prev_size: usize,
     size: usize,
@@ -3445,8 +3401,8 @@ struct ListExprFormatter<'a, 'b: 'a> {
     next_pos: Option<Pos>,
 }
 
-impl<'a, 'b> ListExprFormatter<'a, 'b> {
-    fn new(expr: &'a [&'b Expression<'a>]) -> Self {
+impl<'a, T: AsRef<Expression<'a>>> ListExprFormatter<'a, T> {
+    fn new(expr: &'a [T]) -> Self {
         ListExprFormatter {
             expr,
             prev_break: -1,
@@ -3527,7 +3483,7 @@ impl<'a, 'b> ListExprFormatter<'a, 'b> {
         pos: &Pos,
         cur_index: i32,
     ) -> io::Result<bool> {
-        let newline_count = pos.lineno - self.expr[cur_index as usize - 1].end().lineno;
+        let newline_count = pos.lineno - self.expr[cur_index as usize - 1].as_ref().end().lineno;
         if newline_count > 0 {
             w.write(b",")?;
             let use_ff = self.use_ff(cur_index);
@@ -3545,18 +3501,18 @@ impl<'a, 'b> ListExprFormatter<'a, 'b> {
     }
 
     fn format<W: io::Write>(&mut self, w: &mut W, ctx: &mut Context) -> io::Result<bool> {
-        let first = &self.expr[0];
+        let first = &self.expr[0].as_ref();
         let line = first.start().lineno;
 
         // same line
         if let Some(Pos { lineno, .. }) = self.prev_pos
             && lineno == line
-            && line == self.expr[self.expr.len() - 1].start().lineno
+            && line == self.expr[self.expr.len() - 1].as_ref().start().lineno
         {
             self.format_expr(w, first, ctx, false)?;
             for e in &self.expr[1..] {
                 w.write(b", ")?;
-                self.format_expr(w, e, ctx, false)?;
+                self.format_expr(w, e.as_ref(), ctx, false)?;
             }
             return Ok(true);
         }
@@ -3583,9 +3539,9 @@ impl<'a, 'b> ListExprFormatter<'a, 'b> {
         )?;
 
         for (i, e) in self.expr.iter().skip(1).enumerate() {
-            self.calc_node_size(e, ctx);
+            self.calc_node_size(e.as_ref(), ctx);
             need_newline = false;
-            if self.try_write_newlines(w, ctx, &e.start(), (i + 1) as i32)? {
+            if self.try_write_newlines(w, ctx, &e.as_ref().start(), (i + 1) as i32)? {
                 need_newline = true;
                 if !do_indent {
                     do_indent = true;
@@ -3595,7 +3551,7 @@ impl<'a, 'b> ListExprFormatter<'a, 'b> {
 
             self.format_expr(
                 w,
-                e,
+                e.as_ref(),
                 ctx,
                 need_newline && self.size > 0 && self.size <= Self::INFINITY,
             )?;
@@ -3606,7 +3562,7 @@ impl<'a, 'b> ListExprFormatter<'a, 'b> {
         }
 
         if let Some(Pos { lineno, .. }) = self.next_pos
-            && self.expr[self.expr.len() - 1].end().lineno < lineno
+            && self.expr[self.expr.len() - 1].as_ref().end().lineno < lineno
             && self.add_comma_when_newline_of_last_expr
         {
             w.write(b",")?;
