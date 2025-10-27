@@ -3476,11 +3476,8 @@ impl<'a, 'b> ListExprFormatter<'a, 'b> {
             self.size = 0;
         }
 
-        if self.size > 0 {
-            self.count += 1;
-        }
-
         if self.prev_size > 0 {
+            self.count += 1;
             self.lnsum += libm::log(self.prev_size as f64);
         }
     }
@@ -3498,6 +3495,10 @@ impl<'a, 'b> ListExprFormatter<'a, 'b> {
             return true;
         }
 
+        if self.count == 0 {
+            return false;
+        }
+
         if self.size > Self::INFINITY {
             return true;
         }
@@ -3511,7 +3512,7 @@ impl<'a, 'b> ListExprFormatter<'a, 'b> {
             return false;
         }
 
-        let ratio = self.size as f64 / libm::exp(self.lnsum / (self.count) as f64);
+        let ratio = self.size as f64 / libm::exp(self.lnsum / self.count as f64);
         if ratio <= 0.4 || ratio >= 2.5 {
             true
         } else {
@@ -3590,7 +3591,6 @@ impl<'a, 'b> ListExprFormatter<'a, 'b> {
                     do_indent = true;
                     ctx.indent_count += self.indent_when_newline;
                 }
-                // write_indents(w, ctx.indent_count)?;
             };
 
             self.format_expr(
