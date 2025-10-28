@@ -2220,9 +2220,7 @@ impl<'a, W: io::Write> Formatter<W> for ImportGroup<'a> {
         Token::Lparen.format(w, ctx)?;
         ctx.indent_count += 1;
 
-        const C: usize = 1024;
-        #[allow(invalid_value)]
-        let mut fs: [ImportSpecFormatter; C] = unsafe { MaybeUninit::uninit().assume_init() };
+        let mut fs = Vec::with_capacity(self.specs.len());
 
         let mut from = 0;
         let spec_count = self.specs.len();
@@ -2233,7 +2231,6 @@ impl<'a, W: io::Write> Formatter<W> for ImportGroup<'a> {
             from = end;
 
             // format the block comment if any
-
             ctx.use_ff_when_newline = true;
             if specs[0].doc.is_some() {
                 // consume the block comment
@@ -2257,11 +2254,11 @@ impl<'a, W: io::Write> Formatter<W> for ImportGroup<'a> {
                         lineno: &s.start().lineno + 1,
                     },
                 );
-                fs[len] = ImportSpecFormatter {
+                fs.push(ImportSpecFormatter {
                     left_comments: left,
                     right_comments: right,
                     spec: &s,
-                };
+                });
                 len += 1;
             }
 
@@ -2284,6 +2281,7 @@ impl<'a, W: io::Write> Formatter<W> for ImportGroup<'a> {
                 }
                 f.format(w, ctx)?;
             }
+            fs.clear();
         }
 
         if ctx.has_comments_before(&self.rparen) {
