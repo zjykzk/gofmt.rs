@@ -1,5 +1,4 @@
 use std::io::Write;
-use std::mem::MaybeUninit;
 use std::mem::discriminant;
 use std::{cmp::Ordering, collections::HashMap, fmt::Debug, io, ptr};
 
@@ -1834,7 +1833,7 @@ impl<W: io::Write> Formatter<W> for Operator {
 impl<'a, W: io::Write> ParamFormatter<W> for ParamDecl<'a> {
     fn format(&self, w: &mut W, ctx: &mut Context, do_indent_ident: bool) -> io::Result<()> {
         if let Some(id) = &self.idents {
-            id.format_with_indent(w, ctx, do_indent_ident)?;
+            format_identifier_list_with_indent(id, w, ctx, do_indent_ident)?;
             write_blank(w)?;
         }
 
@@ -2047,7 +2046,7 @@ impl<'a, 'b> TypeParametersFormatter<'a, 'b> {
             return false;
         }
 
-        if !first.idents.followers.is_empty() {
+        if first.idents.len() > 1 {
             return false;
         }
 
@@ -2108,9 +2107,7 @@ struct TypeParamDeclAndComma<'a, 'b: 'a> {
 
 impl<'a, 'b: 'a, W: io::Write> ParamFormatter<W> for TypeParamDeclAndComma<'a, 'b> {
     fn format(&self, w: &mut W, ctx: &mut Context, do_indent_ident: bool) -> io::Result<()> {
-        self.decl
-            .idents
-            .format_with_indent(w, ctx, do_indent_ident)?;
+        format_identifier_list_with_indent(&self.decl.idents, w, ctx, do_indent_ident)?;
         write_blank(w)?;
         self.decl.type_constraint.format(w, ctx)?;
         w.write(b",")?;
@@ -2130,7 +2127,7 @@ impl<'a, 'b: 'a> Range for TypeParamDeclAndComma<'a, 'b> {
 
 impl<'a, W: io::Write> ParamFormatter<W> for TypeParamDecl<'a> {
     fn format(&self, w: &mut W, ctx: &mut Context, do_indent_ident: bool) -> io::Result<()> {
-        self.idents.format_with_indent(w, ctx, do_indent_ident)?;
+        format_identifier_list_with_indent(&self.idents, w, ctx, do_indent_ident)?;
         write_blank(w)?;
         self.type_constraint.format(w, ctx)
     }
@@ -3234,42 +3231,32 @@ impl<'a, W: io::Write> Formatter<W> for VarSpec<'a> {
 
 impl<'a, W: io::Write> Formatter<W> for IdentifierList<'a> {
     fn format(&self, w: &mut W, ctx: &mut Context) -> io::Result<()> {
-        self.format_with_indent(w, ctx, true)
+        format_identifier_list_with_indent(self, w, ctx, true)
     }
 }
 
-impl<'a> IdentifierList<'a> {
-    fn format_with_indent<W: io::Write>(
-        &self,
-        w: &mut W,
-        ctx: &mut Context,
-        do_indent: bool,
-    ) -> io::Result<()> {
-        const N: usize = 128;
-        let mut exprs: [MaybeUninit<Expression>; N] =
-            unsafe { MaybeUninit::uninit().assume_init() };
-        exprs[0].write(Expression::Ident(Box::new(self.ident)));
-        let mut i = 1;
-        for f in &self.followers {
-            exprs[i].write(Expression::Ident(Box::new(f.ident)));
-            i += 1;
-        }
-
-        let mut exprs_ref: [MaybeUninit<&Expression>; N] =
-            unsafe { MaybeUninit::uninit().assume_init() };
-        for k in 0..i {
-            exprs_ref[k].write(unsafe { exprs[k].assume_init_ref() });
-        }
-
-        ListExprFormatter {
-            indent_when_newline: if do_indent { 1 } else { 0 },
-            ..ListExprFormatter::new(
-                &unsafe { std::mem::transmute::<_, [&Expression; N]>(exprs_ref) }[..i],
-            )
-        }
-        .format(w, ctx)?;
-        Ok(())
+fn format_identifier_list_with_indent<'a, W: io::Write>(
+    list: &IdentifierList<'a>,
+    w: &mut W,
+    ctx: &mut Context,
+    do_indent: bool,
+) -> io::Result<()> {
+    if list.is_empty() {
+        return Ok(());
     }
+
+    // Convert identifiers to expressions for formatting
+    let exprs: Vec<Expression> = list
+        .iter()
+        .map(|(ident, _)| Expression::Ident(Box::new(*ident)))
+        .collect();
+
+    ListExprFormatter {
+        indent_when_newline: if do_indent { 1 } else { 0 },
+        ..ListExprFormatter::new(&exprs)
+    }
+    .format(w, ctx)?;
+    Ok(())
 }
 
 impl<'a, W: io::Write> Formatter<W> for VarGroup<'a> {
@@ -3308,7 +3295,7 @@ impl<'a> VarGroup<'a> {
         ctx: &mut Context,
         keep_type: bool,
     ) -> io::Result<u32> {
-        s.ident_list.format_with_indent(w, ctx, false)?;
+        format_identifier_list_with_indent(&s.ident_list, w, ctx, false)?;
         let output_lineno = ctx.output_lineno;
 
         let mut sep_filled_count = 0;
@@ -3821,7 +3808,7 @@ impl<'a, W: io::Write> Formatter<W> for FieldDeclFormatter<'a> {
         let sep = &[VTAB];
         let (idents, typ, tag, comment_index) = self.field.expand_field_ele();
         let mut extra_tabs = if let Some(idents) = idents {
-            idents.format_with_indent(w, ctx, false)?;
+            format_identifier_list_with_indent(idents, w, ctx, false)?;
             w.write(sep)?;
             1
         } else {

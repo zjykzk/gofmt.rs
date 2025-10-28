@@ -503,30 +503,18 @@ impl<'a> Range for TypeParamDecl<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct IdentifierList<'a> {
-    pub ident: Identifier<'a>,
-    pub followers: Vec<CommaAndIdentifier<'a>>,
-}
+// IdentifierList is a list of identifiers with their preceding comma positions
+// The first element has Pos::zero() as its comma position
+pub(crate) type IdentifierList<'a> = Vec<(Identifier<'a>, Pos)>;
 
 impl<'a> Range for IdentifierList<'a> {
     fn start(&self) -> Pos {
-        self.ident.start()
+        self[0].0.start() // SAFETY: always not zero
     }
 
     fn end(&self) -> Pos {
-        if self.followers.is_empty() {
-            self.ident.end()
-        } else {
-            self.followers[self.followers.len() - 1].ident.end()
-        }
+        self[self.len() - 1].0.end() // SAFETY: always not zero
     }
-}
-
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct CommaAndIdentifier<'a> {
-    pub comma: Pos,
-    pub ident: Identifier<'a>,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]

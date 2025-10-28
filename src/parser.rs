@@ -459,10 +459,7 @@ impl<'a, T: FnMut(usize, usize, &str), S: Source<'a>> Parser<'a, T, S> {
                                 }
                             } else {
                                 ParamDecl {
-                                    idents: Some(IdentifierList {
-                                        ident,
-                                        followers: vec![],
-                                    }),
+                                    idents: Some(vec![(ident, Pos::zero())]),
                                     dotdotdot: None,
                                     typ: expr,
                                 }
@@ -488,9 +485,7 @@ impl<'a, T: FnMut(usize, usize, &str), S: Source<'a>> Parser<'a, T, S> {
                     )),
                     _ => {
                         let idents = self.ident_list_or_type_list(ident)?;
-                        if idents.followers.len() == 1
-                            && idents.followers[idents.followers.len() - 1].ident.pos.col == 0
-                        {
+                        if idents.len() == 2 && idents[idents.len() - 1].0.pos.col == 0 {
                             return Ok((
                                 Some(ParamDecl {
                                     idents: None,
@@ -564,41 +559,33 @@ impl<'a, T: FnMut(usize, usize, &str), S: Source<'a>> Parser<'a, T, S> {
     }
 
     fn idents_to_param_list(&self, idents: &IdentifierList<'a>) -> Option<ParamList<'a>> {
-        let followers = &idents.followers;
-        let follower_count = followers.len();
-
-        if follower_count <= 0 {
+        if idents.len() <= 1 {
             return None;
         }
 
-        let is_last_comma = followers[follower_count - 1].ident.pos.col == 0;
+        let is_last_comma = idents[idents.len() - 1].0.pos.col == 0;
         if self.tok() == Token::Rparen || is_last_comma {
-            let mut param_lists = vec![(
-                ParamDecl {
-                    idents: None,
-                    dotdotdot: None,
-                    typ: Expression::Ident(Box::new(idents.ident)),
-                },
-                followers[0].comma,
-            )];
-            for (i, id) in followers[..follower_count - 1].iter().enumerate() {
+            let mut param_lists = vec![];
+
+            for i in 0..idents.len() {
+                if is_last_comma && i == idents.len() - 1 {
+                    // Skip the last empty identifier
+                    break;
+                }
+
+                let comma_pos = if i + 1 < idents.len() {
+                    idents[i + 1].1
+                } else {
+                    Pos::zero()
+                };
+
                 param_lists.push((
                     ParamDecl {
                         idents: None,
                         dotdotdot: None,
-                        typ: Expression::Ident(Box::new(id.ident)),
+                        typ: Expression::Ident(Box::new(idents[i].0)),
                     },
-                    followers[i + 1].comma,
-                ));
-            }
-            if !is_last_comma {
-                param_lists.push((
-                    ParamDecl {
-                        idents: None,
-                        dotdotdot: None,
-                        typ: Expression::Ident(Box::new(followers[follower_count - 1].ident)),
-                    },
-                    Pos::zero(),
+                    comma_pos,
                 ));
             }
             return Some(param_lists);
@@ -760,7 +747,7 @@ impl<'a, T: FnMut(usize, usize, &str), S: Source<'a>> Parser<'a, T, S> {
 
     fn var_spec(&mut self, doc: Option<CommentIndex>) -> Result<VarSpec<'a>> {
         let ident = self.name()?;
-        let ident_list = self.ident_list(ident)?;
+        let ident_list = self.ident_list(&ident)?;
         match self.tok() {
             Token::EOF | Token::Semi | Token::Rparen => Ok(VarSpec {
                 doc,
@@ -1127,12 +1114,9 @@ impl<'a, T: FnMut(usize, usize, &str), S: Source<'a>> Parser<'a, T, S> {
         };
 
         let idents = if proceed_typ.is_some() {
-            IdentifierList {
-                ident,
-                followers: vec![],
-            }
+            vec![(ident, Pos::zero())]
         } else {
-            self.ident_list(ident)?
+            self.ident_list(&ident)?
         };
 
         let type_constraint = self.type_elem(proceed_typ)?;
@@ -1403,10 +1387,7 @@ impl<'a, T: FnMut(usize, usize, &str), S: Source<'a>> Parser<'a, T, S> {
                                 FieldDeclOption::Fields(Fields {
                                     doc,
                                     line_comment,
-                                    idents: IdentifierList {
-                                        ident: name,
-                                        followers: vec![],
-                                    },
+                                    idents: vec![(name, Pos::zero())],
                                     typ: expr,
                                     tag,
                                 }),
@@ -1549,16 +1530,14 @@ impl<'a, T: FnMut(usize, usize, &str), S: Source<'a>> Parser<'a, T, S> {
         Ok(ident)
     }
 
-    fn ident_list(&mut self, ident: Identifier<'a>) -> Result<IdentifierList<'a>> {
-        let mut followers = vec![];
+    fn ident_list(&mut self, ident: &Identifier<'a>) -> Result<IdentifierList<'a>> {
+        let mut list = vec![(*ident, Pos::zero())];
         while self.tok() == Token::Comma {
             let comma = self.get_pos_then_next();
-            followers.push(CommaAndIdentifier {
-                comma,
-                ident: self.name()?,
-            });
+            let next_ident = self.name()?;
+            list.push((next_ident, comma));
         }
-        Ok(IdentifierList { ident, followers })
+        Ok(list)
     }
 
     // fn is_type_list(idents: &IdentifierList<'a>) -> bool {
@@ -1571,28 +1550,26 @@ impl<'a, T: FnMut(usize, usize, &str), S: Source<'a>> Parser<'a, T, S> {
 
     // `pos` in last elements in the `followers` is zero means type list.
     fn ident_list_or_type_list(&mut self, ident: Identifier<'a>) -> Result<IdentifierList<'a>> {
-        let mut followers = vec![];
+        let mut list = vec![(ident, Pos::zero())];
         while self.tok() == Token::Comma {
             let comma = self.get_pos_then_next();
             if self.tok() == Token::Name {
-                followers.push(CommaAndIdentifier {
-                    comma,
-                    ident: self.name()?,
-                });
+                let next_ident = self.name()?;
+                list.push((next_ident, comma));
             } else {
                 // case `f(a,
                 // )`
-                followers.push(CommaAndIdentifier {
-                    comma,
-                    ident: Identifier {
+                list.push((
+                    Identifier {
                         name: "",
                         pos: Pos::zero(),
                     },
-                });
+                    comma,
+                ));
                 break;
             }
         }
-        Ok(IdentifierList { ident, followers })
+        Ok(list)
     }
 
     fn field_names(
@@ -1600,7 +1577,7 @@ impl<'a, T: FnMut(usize, usize, &str), S: Source<'a>> Parser<'a, T, S> {
         ident: Identifier<'a>,
         doc: Option<CommentIndex>,
     ) -> Result<(Fields<'a>, Pos)> {
-        let idents = self.ident_list(ident)?;
+        let idents = self.ident_list(&ident)?;
         let typ = self.r#type(self.tok())?;
         let tag = match self.tok() {
             Token::Literal => {
@@ -2825,13 +2802,13 @@ mod test {
                                 FieldDeclOption::Fields(Fields {
                                     doc: None,
                                     line_comment: None,
-                                    idents: IdentifierList {
-                                        ident: Identifier {
+                                    idents: vec![(
+                                        Identifier {
                                             name: "x",
                                             pos: Pos { col: 3, lineno: 2 },
                                         },
-                                        followers: vec![],
-                                    },
+                                        Pos::zero()
+                                    )],
                                     typ: Expression::Ident(Box::new(Identifier {
                                         name: "int",
                                         pos: Pos { lineno: 2, col: 5 }
@@ -2849,19 +2826,22 @@ mod test {
                                 FieldDeclOption::Fields(Fields {
                                     doc: None,
                                     line_comment: None,
-                                    idents: IdentifierList {
-                                        ident: Identifier {
-                                            name: "y",
-                                            pos: Pos { col: 3, lineno: 3 },
-                                        },
-                                        followers: vec![CommaAndIdentifier {
-                                            comma: Pos { col: 4, lineno: 3 },
-                                            ident: Identifier {
+                                    idents: vec![
+                                        (
+                                            Identifier {
+                                                name: "y",
+                                                pos: Pos { col: 3, lineno: 3 },
+                                            },
+                                            Pos::zero()
+                                        ),
+                                        (
+                                            Identifier {
                                                 name: "z",
                                                 pos: Pos { col: 7, lineno: 3 },
-                                            }
-                                        }],
-                                    },
+                                            },
+                                            Pos { col: 4, lineno: 3 }
+                                        )
+                                    ],
                                     typ: Expression::Ident(Box::new(Identifier {
                                         name: "string",
                                         pos: Pos { lineno: 3, col: 9 }
@@ -3298,19 +3278,22 @@ Z int,
                         param_list: vec![
                             (
                                 TypeParamDecl {
-                                    idents: IdentifierList {
-                                        ident: Identifier {
-                                            name: "X",
-                                            pos: Pos { col: 8, lineno: 1 }
-                                        },
-                                        followers: vec![CommaAndIdentifier {
-                                            comma: Pos { col: 9, lineno: 1 },
-                                            ident: Identifier {
+                                    idents: vec![
+                                        (
+                                            Identifier {
+                                                name: "X",
+                                                pos: Pos { col: 8, lineno: 1 }
+                                            },
+                                            Pos::zero()
+                                        ),
+                                        (
+                                            Identifier {
                                                 name: "Y",
                                                 pos: Pos { col: 11, lineno: 1 }
-                                            }
-                                        }]
-                                    },
+                                            },
+                                            Pos { col: 9, lineno: 1 }
+                                        )
+                                    ],
                                     type_constraint: TypeElem {
                                         term: Expression::Ident(Box::new(Identifier {
                                             name: "any",
@@ -3323,13 +3306,13 @@ Z int,
                             ),
                             (
                                 TypeParamDecl {
-                                    idents: IdentifierList {
-                                        ident: Identifier {
+                                    idents: vec![(
+                                        Identifier {
                                             pos: Pos { col: 1, lineno: 2 },
                                             name: "Z",
                                         },
-                                        followers: vec![]
-                                    },
+                                        Pos::zero()
+                                    )],
                                     type_constraint: TypeElem {
                                         followers: vec![],
                                         term: Expression::Ident(Box::new(Identifier {
@@ -3350,13 +3333,13 @@ Z int,
                             FieldDeclOption::Fields(Fields {
                                 doc: None,
                                 line_comment: None,
-                                idents: IdentifierList {
-                                    ident: Identifier {
+                                idents: vec![(
+                                    Identifier {
                                         name: "t",
                                         pos: Pos { col: 5, lineno: 4 },
                                     },
-                                    followers: vec![],
-                                },
+                                    Pos::zero()
+                                )],
                                 typ: Expression::Ident(Box::new(Identifier {
                                     name: "X",
                                     pos: Pos { lineno: 4, col: 7 }
@@ -3385,13 +3368,13 @@ Z int,
                         rbrack: Pos { col: 14, lineno: 1 },
                         param_list: vec![(
                             TypeParamDecl {
-                                idents: IdentifierList {
-                                    ident: Identifier {
+                                idents: vec![(
+                                    Identifier {
                                         name: "a",
                                         pos: Pos { col: 8, lineno: 1 }
                                     },
-                                    followers: vec![]
-                                },
+                                    Pos::zero()
+                                )],
                                 type_constraint: TypeElem {
                                     term: Expression::Operation(Box::new(Operation {
                                         op: OperatorPos {
@@ -3404,7 +3387,7 @@ Z int,
                                         })),
                                         y: None
                                     })),
-                                    followers: vec![],
+                                    followers: vec![]
                                 }
                             },
                             Pos { col: 13, lineno: 1 },
@@ -3604,13 +3587,13 @@ Z int,
                     lbrack: Pos { col: 7, lineno: 1 },
                     param_list: vec![(
                         TypeParamDecl {
-                            idents: IdentifierList {
-                                ident: Identifier {
+                            idents: vec![(
+                                Identifier {
                                     name: "T",
                                     pos: Pos { col: 8, lineno: 1 }
                                 },
-                                followers: vec![]
-                            },
+                                Pos::zero()
+                            )],
                             type_constraint: TypeElem {
                                 term: Expression::Operation(Box::new(Operation {
                                     op: OperatorPos {
@@ -3665,19 +3648,22 @@ d ...T,)(x, y int,
                             list: Some(vec![
                                 (
                                     ParamDecl {
-                                        idents: Some(IdentifierList {
-                                            ident: Identifier {
-                                                name: "a",
-                                                pos: Pos { col: 13, lineno: 1 }
-                                            },
-                                            followers: vec![CommaAndIdentifier {
-                                                comma: Pos { col: 14, lineno: 1 },
-                                                ident: Identifier {
+                                        idents: Some(vec![
+                                            (
+                                                Identifier {
+                                                    name: "a",
+                                                    pos: Pos { col: 13, lineno: 1 }
+                                                },
+                                                Pos::zero()
+                                            ),
+                                            (
+                                                Identifier {
                                                     name: "b",
                                                     pos: Pos { col: 15, lineno: 1 }
-                                                }
-                                            }]
-                                        }),
+                                                },
+                                                Pos { col: 14, lineno: 1 }
+                                            )
+                                        ]),
                                         dotdotdot: None,
                                         typ: Expression::Ident(Box::new(Identifier {
                                             name: "T",
@@ -3688,13 +3674,13 @@ d ...T,)(x, y int,
                                 ),
                                 (
                                     ParamDecl {
-                                        idents: Some(IdentifierList {
-                                            ident: Identifier {
+                                        idents: Some(vec![(
+                                            Identifier {
                                                 name: "c",
                                                 pos: Pos { col: 19, lineno: 1 }
                                             },
-                                            followers: vec![]
-                                        }),
+                                            Pos::zero()
+                                        )]),
                                         dotdotdot: None,
                                         typ: Expression::Ident(Box::new(Identifier {
                                             name: "int",
@@ -3705,13 +3691,13 @@ d ...T,)(x, y int,
                                 ),
                                 (
                                     ParamDecl {
-                                        idents: Some(IdentifierList {
-                                            ident: Identifier {
+                                        idents: Some(vec![(
+                                            Identifier {
                                                 name: "d",
                                                 pos: Pos { col: 1, lineno: 2 },
                                             },
-                                            followers: vec![],
-                                        },),
+                                            Pos::zero()
+                                        )]),
                                         dotdotdot: Some(Pos { col: 3, lineno: 2 },),
                                         typ: Expression::Ident(Box::new(Identifier {
                                             name: "T",
@@ -3727,19 +3713,22 @@ d ...T,)(x, y int,
                             rparen: Pos { col: 1, lineno: 3 },
                             list: Some(vec![(
                                 ParamDecl {
-                                    idents: Some(IdentifierList {
-                                        ident: Identifier {
-                                            name: "x",
-                                            pos: Pos { col: 10, lineno: 2 }
-                                        },
-                                        followers: vec![CommaAndIdentifier {
-                                            comma: Pos { col: 11, lineno: 2 },
-                                            ident: Identifier {
+                                    idents: Some(vec![
+                                        (
+                                            Identifier {
+                                                name: "x",
+                                                pos: Pos { col: 10, lineno: 2 }
+                                            },
+                                            Pos::zero()
+                                        ),
+                                        (
+                                            Identifier {
                                                 name: "y",
                                                 pos: Pos { col: 13, lineno: 2 }
-                                            }
-                                        }]
-                                    }),
+                                            },
+                                            Pos { col: 11, lineno: 2 }
+                                        )
+                                    ]),
                                     dotdotdot: None,
                                     typ: Expression::Ident(Box::new(Identifier {
                                         name: "int",
@@ -4000,13 +3989,13 @@ int|~i
                             FieldDeclOption::Fields(Fields {
                                 doc: None,
                                 line_comment: None,
-                                idents: IdentifierList {
-                                    ident: Identifier {
+                                idents: vec![(
+                                    Identifier {
                                         name: "x",
                                         pos: Pos { col: 8, lineno: 1 }
                                     },
-                                    followers: vec![]
-                                },
+                                    Pos::zero()
+                                )],
                                 typ: Expression::Ident(Box::new(Identifier {
                                     name: "int",
                                     pos: Pos { col: 10, lineno: 1 }
@@ -4050,13 +4039,13 @@ int|~i
                             FieldDeclOption::Fields(Fields {
                                 doc: None,
                                 line_comment: None,
-                                idents: IdentifierList {
-                                    ident: Identifier {
+                                idents: vec![(
+                                    Identifier {
                                         name: "x",
                                         pos: Pos { col: 8, lineno: 1 }
                                     },
-                                    followers: vec![]
-                                },
+                                    Pos::zero()
+                                )],
                                 typ: Expression::Ident(Box::new(Identifier {
                                     name: "int",
                                     pos: Pos { col: 10, lineno: 1 }
@@ -4718,13 +4707,13 @@ int|~i
                     lparen: Pos { col: 6, lineno: 1 },
                     list: Some(vec![(
                         ParamDecl {
-                            idents: Some(IdentifierList {
-                                ident: Identifier {
+                            idents: Some(vec![(
+                                Identifier {
                                     name: "a",
                                     pos: Pos { col: 7, lineno: 1 }
                                 },
-                                followers: vec![],
-                            }),
+                                Pos::zero()
+                            )]),
                             dotdotdot: None,
                             typ: Expression::Ident(Box::new(Identifier {
                                 name: "int",
@@ -4886,19 +4875,22 @@ a,b=2,3",
                 decl: VarDeclOption::Spec(VarSpec {
                     doc: None,
                     line_comment: None,
-                    ident_list: IdentifierList {
-                        ident: Identifier {
-                            name: "x",
-                            pos: Pos { col: 7, lineno: 1 }
-                        },
-                        followers: vec![CommaAndIdentifier {
-                            comma: Pos { col: 8, lineno: 1 },
-                            ident: Identifier {
+                    ident_list: vec![
+                        (
+                            Identifier {
+                                name: "x",
+                                pos: Pos { col: 7, lineno: 1 }
+                            },
+                            Pos::zero()
+                        ),
+                        (
+                            Identifier {
                                 name: "y",
                                 pos: Pos { col: 9, lineno: 1 }
-                            }
-                        }]
-                    },
+                            },
+                            Pos { col: 8, lineno: 1 }
+                        )
+                    ],
                     typ: Some(Expression::Ident(Box::new(Identifier {
                         name: "int",
                         pos: Pos { col: 11, lineno: 1 }
@@ -4941,19 +4933,22 @@ a,b=2,3",
                             VarSpec {
                                 doc: None,
                                 line_comment: None,
-                                ident_list: IdentifierList {
-                                    ident: Identifier {
-                                        name: "x",
-                                        pos: Pos { col: 8, lineno: 1 }
-                                    },
-                                    followers: vec![CommaAndIdentifier {
-                                        comma: Pos { col: 9, lineno: 1 },
-                                        ident: Identifier {
+                                ident_list: vec![
+                                    (
+                                        Identifier {
+                                            name: "x",
+                                            pos: Pos { col: 8, lineno: 1 }
+                                        },
+                                        Pos::zero()
+                                    ),
+                                    (
+                                        Identifier {
                                             name: "y",
                                             pos: Pos { col: 10, lineno: 1 }
-                                        }
-                                    }]
-                                },
+                                        },
+                                        Pos { col: 9, lineno: 1 }
+                                    )
+                                ],
                                 typ: Some(Expression::Ident(Box::new(Identifier {
                                     name: "int",
                                     pos: Pos { col: 12, lineno: 1 }
@@ -4984,13 +4979,13 @@ a,b=2,3",
                             VarSpec {
                                 doc: None,
                                 line_comment: None,
-                                ident_list: IdentifierList {
-                                    ident: Identifier {
+                                ident_list: vec![(
+                                    Identifier {
                                         name: "z",
                                         pos: Pos { col: 20, lineno: 1 }
                                     },
-                                    followers: vec![]
-                                },
+                                    Pos::zero()
+                                )],
                                 typ: None,
                                 eq: None,
                                 expr_list: None,
@@ -5012,19 +5007,22 @@ a,b=2,3",
                 decl: VarDeclOption::Spec(VarSpec {
                     doc: None,
                     line_comment: None,
-                    ident_list: IdentifierList {
-                        ident: Identifier {
-                            name: "x",
-                            pos: Pos { col: 5, lineno: 1 }
-                        },
-                        followers: vec![CommaAndIdentifier {
-                            comma: Pos { col: 6, lineno: 1 },
-                            ident: Identifier {
+                    ident_list: vec![
+                        (
+                            Identifier {
+                                name: "x",
+                                pos: Pos { col: 5, lineno: 1 }
+                            },
+                            Pos::zero()
+                        ),
+                        (
+                            Identifier {
                                 name: "y",
                                 pos: Pos { col: 7, lineno: 1 }
-                            }
-                        }]
-                    },
+                            },
+                            Pos { col: 6, lineno: 1 }
+                        )
+                    ],
                     typ: Some(Expression::Ident(Box::new(Identifier {
                         name: "int",
                         pos: Pos { col: 9, lineno: 1 }
@@ -5067,19 +5065,22 @@ a,b=2,3",
                             VarSpec {
                                 doc: None,
                                 line_comment: None,
-                                ident_list: IdentifierList {
-                                    ident: Identifier {
-                                        name: "x",
-                                        pos: Pos { col: 6, lineno: 1 }
-                                    },
-                                    followers: vec![CommaAndIdentifier {
-                                        comma: Pos { col: 7, lineno: 1 },
-                                        ident: Identifier {
+                                ident_list: vec![
+                                    (
+                                        Identifier {
+                                            name: "x",
+                                            pos: Pos { col: 6, lineno: 1 }
+                                        },
+                                        Pos::zero()
+                                    ),
+                                    (
+                                        Identifier {
                                             name: "y",
                                             pos: Pos { col: 8, lineno: 1 }
-                                        }
-                                    }]
-                                },
+                                        },
+                                        Pos { col: 7, lineno: 1 }
+                                    )
+                                ],
                                 typ: Some(Expression::Ident(Box::new(Identifier {
                                     name: "int",
                                     pos: Pos { col: 10, lineno: 1 }
@@ -5110,13 +5111,13 @@ a,b=2,3",
                             VarSpec {
                                 doc: None,
                                 line_comment: None,
-                                ident_list: IdentifierList {
-                                    ident: Identifier {
+                                ident_list: vec![(
+                                    Identifier {
                                         name: "z",
                                         pos: Pos { col: 18, lineno: 1 }
                                     },
-                                    followers: vec![]
-                                },
+                                    Pos::zero()
+                                )],
                                 typ: None,
                                 eq: None,
                                 expr_list: None,
@@ -5169,13 +5170,13 @@ a,b=2,3",
                     decl: VarDeclOption::Spec(VarSpec {
                         doc: None,
                         line_comment: None,
-                        ident_list: IdentifierList {
-                            ident: Identifier {
+                        ident_list: vec![(
+                            Identifier {
                                 name: "x",
                                 pos: Pos { col: 8, lineno: 1 }
                             },
-                            followers: vec![]
-                        },
+                            Pos::zero()
+                        )],
                         typ: None,
                         eq: Some(Pos { col: 10, lineno: 1 }),
                         expr_list: Some(Expression::BasicLit(Box::new(BasicLit {
@@ -5201,13 +5202,13 @@ a,b=2,3",
                     decl: VarDeclOption::Spec(VarSpec {
                         doc: None,
                         line_comment: None,
-                        ident_list: IdentifierList {
-                            ident: Identifier {
+                        ident_list: vec![(
+                            Identifier {
                                 name: "x",
                                 pos: Pos { col: 6, lineno: 1 }
                             },
-                            followers: vec![]
-                        },
+                            Pos::zero()
+                        )],
                         typ: None,
                         eq: Some(Pos { col: 8, lineno: 1 }),
                         expr_list: Some(Expression::BasicLit(Box::new(BasicLit {
@@ -6206,19 +6207,22 @@ var x,y int=1,2 // x",
                 decl: VarDeclOption::Spec(VarSpec {
                     doc: Some(0),
                     line_comment: Some(1),
-                    ident_list: IdentifierList {
-                        ident: Identifier {
-                            name: "x",
-                            pos: Pos { col: 5, lineno: 2 }
-                        },
-                        followers: vec![CommaAndIdentifier {
-                            comma: Pos { col: 6, lineno: 2 },
-                            ident: Identifier {
+                    ident_list: vec![
+                        (
+                            Identifier {
+                                name: "x",
+                                pos: Pos { col: 5, lineno: 2 }
+                            },
+                            Pos::zero()
+                        ),
+                        (
+                            Identifier {
                                 name: "y",
                                 pos: Pos { col: 7, lineno: 2 }
-                            }
-                        }]
-                    },
+                            },
+                            Pos { col: 6, lineno: 2 }
+                        )
+                    ],
                     typ: Some(Expression::Ident(Box::new(Identifier {
                         name: "int",
                         pos: Pos { col: 9, lineno: 2 }
@@ -6311,19 +6315,22 @@ func f(){+x}",
                             FieldDeclOption::Fields(Fields {
                                 doc: Some(0),
                                 line_comment: Some(1),
-                                idents: IdentifierList {
-                                    ident: Identifier {
-                                        name: "y",
-                                        pos: Pos { col: 3, lineno: 3 },
-                                    },
-                                    followers: vec![CommaAndIdentifier {
-                                        comma: Pos { col: 4, lineno: 3 },
-                                        ident: Identifier {
+                                idents: vec![
+                                    (
+                                        Identifier {
+                                            name: "y",
+                                            pos: Pos { col: 3, lineno: 3 },
+                                        },
+                                        Pos::zero()
+                                    ),
+                                    (
+                                        Identifier {
                                             name: "z",
                                             pos: Pos { col: 7, lineno: 3 },
-                                        }
-                                    }],
-                                },
+                                        },
+                                        Pos { col: 4, lineno: 3 }
+                                    )
+                                ],
                                 typ: Expression::Ident(Box::new(Identifier {
                                     name: "string",
                                     pos: Pos { lineno: 3, col: 9 }
@@ -6416,13 +6423,13 @@ func (a int)f(){}",
                     lparen: Pos { col: 6, lineno: 2 },
                     list: Some(vec![(
                         ParamDecl {
-                            idents: Some(IdentifierList {
-                                ident: Identifier {
+                            idents: Some(vec![(
+                                Identifier {
                                     name: "a",
                                     pos: Pos { col: 7, lineno: 2 }
                                 },
-                                followers: vec![],
-                            }),
+                                Pos::zero()
+                            )]),
                             dotdotdot: None,
                             typ: Expression::Ident(Box::new(Identifier {
                                 name: "int",
@@ -6574,13 +6581,13 @@ int|~i //x
                         lparen: Pos { col: 7, lineno: 1 },
                         list: Some(vec![(
                             ParamDecl {
-                                idents: Some(IdentifierList {
-                                    ident: Identifier {
+                                idents: Some(vec![(
+                                    Identifier {
                                         name: "l",
                                         pos: Pos { col: 8, lineno: 1 },
                                     },
-                                    followers: vec![],
-                                },),
+                                    Pos::zero()
+                                )]),
                                 dotdotdot: None,
                                 typ: Expression::SliceType(Box::new(SliceType {
                                     lbrack: Pos { col: 10, lineno: 1 },
@@ -6625,13 +6632,13 @@ int|~i //x
                         lparen: Pos { col: 7, lineno: 1 },
                         list: Some(vec![(
                             ParamDecl {
-                                idents: Some(IdentifierList {
-                                    ident: Identifier {
+                                idents: Some(vec![(
+                                    Identifier {
                                         name: "l",
                                         pos: Pos { col: 8, lineno: 1 },
                                     },
-                                    followers: vec![],
-                                },),
+                                    Pos::zero()
+                                )]),
                                 dotdotdot: None,
                                 typ: Expression::Operation(Box::new(Operation {
                                     op: OperatorPos {
@@ -6713,13 +6720,13 @@ int|~i //x
                         lparen: Pos { col: 7, lineno: 1 },
                         list: Some(vec![(
                             ParamDecl {
-                                idents: Some(IdentifierList {
-                                    ident: Identifier {
+                                idents: Some(vec![(
+                                    Identifier {
                                         name: "l",
                                         pos: Pos { col: 8, lineno: 1 },
                                     },
-                                    followers: vec![],
-                                },),
+                                    Pos::zero()
+                                )]),
                                 dotdotdot: None,
                                 typ: Expression::Operation(Box::new(Operation {
                                     op: OperatorPos {
@@ -6797,13 +6804,13 @@ int|~i //x
                         list: Some(vec![
                             (
                                 ParamDecl {
-                                    idents: Some(IdentifierList {
-                                        ident: Identifier {
+                                    idents: Some(vec![(
+                                        Identifier {
                                             name: "s",
                                             pos: Pos { col: 8, lineno: 1 }
                                         },
-                                        followers: vec![],
-                                    }),
+                                        Pos::zero()
+                                    )]),
                                     dotdotdot: None,
                                     typ: Expression::SliceType(Box::new(SliceType {
                                         lbrack: Pos { col: 10, lineno: 1 },
@@ -6818,13 +6825,13 @@ int|~i //x
                             ),
                             (
                                 ParamDecl {
-                                    idents: Some(IdentifierList {
-                                        ident: Identifier {
+                                    idents: Some(vec![(
+                                        Identifier {
                                             name: "t",
                                             pos: Pos { col: 15, lineno: 1 }
                                         },
-                                        followers: vec![]
-                                    }),
+                                        Pos::zero()
+                                    )]),
                                     dotdotdot: None,
                                     typ: Expression::Ident(Box::new(Identifier {
                                         name: "T",
@@ -6882,13 +6889,13 @@ int|~i //x
                                 FieldDeclOption::Fields(Fields {
                                     doc: None,
                                     line_comment: None,
-                                    idents: IdentifierList {
-                                        ident: Identifier {
+                                    idents: vec![(
+                                        Identifier {
                                             name: "file",
                                             pos: Pos { col: 2, lineno: 4 },
                                         },
-                                        followers: vec![],
-                                    },
+                                        Pos::zero()
+                                    )],
                                     typ: Expression::Operation(Box::new(Operation {
                                         op: OperatorPos {
                                             op: Operator::Mul,
@@ -6934,13 +6941,13 @@ int|~i //x
                             FieldDeclOption::Fields(Fields {
                                 doc: None,
                                 line_comment: None,
-                                idents: IdentifierList {
-                                    ident: Identifier {
+                                idents: vec![(
+                                    Identifier {
                                         name: "parentFuncTypes",
                                         pos: Pos { col: 2, lineno: 2 },
                                     },
-                                    followers: vec![],
-                                },
+                                    Pos::zero()
+                                )],
                                 typ: Expression::SliceType(Box::new(SliceType {
                                     lbrack: Pos { col: 17, lineno: 2 },
                                     rbrack: Pos { col: 18, lineno: 2 },
