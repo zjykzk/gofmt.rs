@@ -82,9 +82,7 @@ The project includes an extensive test suite with over 200 test cases covering:
 - **Basic Go constructs**: functions, variables, types, interfaces
 - **Complex formatting**: composite literals, function calls, expressions
 - **Comment handling**: line comments, block comments, documentation
-- **Go build directives**: build tags and compiler directives
 - **Advanced features**: generics, type parameters, complex expressions
-- **gofumpt compatibility**: Additional formatting rules from gofumpt
 
 Each test case consists of:
 - `.input` file: Unformatted Go source code
