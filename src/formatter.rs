@@ -450,7 +450,7 @@ impl<'a, 'b> Context<'a, 'b> {
         }
     }
 
-    fn singleline_node_size<T: Formatter<SingleLineNodeSizeWriter> + Range>(
+    fn singleline_node_size<T: Formatter<SingleLineNodeSizeWriter> + Range + Debug>(
         &mut self,
         b: &T,
     ) -> usize {
@@ -462,14 +462,19 @@ impl<'a, 'b> Context<'a, 'b> {
         let backup_comment_header = self.comment_header;
         let backup_last_end_pos = self.last_end_pos;
         let backup_indent_count = self.indent_count;
-        let backup_lineno = self.output_lineno;
+        let backup_output_lineno = self.output_lineno;
         let backup_force_newline = self.force_newline;
         let backup_max_newlines = self.max_newlines;
         let backup_unindent_when_new_line = self.unindent_when_newline;
+        let backup_useff_when_newline = self.use_ff_when_newline;
 
         self.comment_header = self.comments.len(); // skip the comments
         self.indent_count = 0;
+        self.max_newlines = MAX_NEWLINES;
         self.last_end_pos = b.start();
+        self.use_ff_when_newline = false;
+        self.force_newline = false;
+        self.unindent_when_newline = 0;
 
         let mut sw = SingleLineNodeSizeWriter::default();
         let _ = b.format(&mut sw, self); // impossible error
@@ -478,10 +483,11 @@ impl<'a, 'b> Context<'a, 'b> {
         self.indent_count = backup_indent_count;
         self.last_end_pos = backup_last_end_pos;
         self.comment_header = backup_comment_header;
-        self.output_lineno = backup_lineno;
+        self.output_lineno = backup_output_lineno;
         self.force_newline = backup_force_newline;
         self.max_newlines = backup_max_newlines;
         self.unindent_when_newline = backup_unindent_when_new_line;
+        self.use_ff_when_newline = backup_useff_when_newline;
 
         sw.size
     }
@@ -3245,15 +3251,9 @@ fn format_identifier_list_with_indent<'a, W: io::Write>(
         return Ok(());
     }
 
-    // Convert identifiers to expressions for formatting
-    let exprs: Vec<Expression> = list
-        .iter()
-        .map(|(ident, _)| Expression::Ident(Box::new(*ident)))
-        .collect();
-
     ListExprFormatter {
         indent_when_newline: if do_indent { 1 } else { 0 },
-        ..ListExprFormatter::new(&exprs)
+        ..ListExprFormatter::new(&list)
     }
     .format(w, ctx)?;
     Ok(())
@@ -3355,15 +3355,132 @@ impl<'a> VarGroup<'a> {
     }
 }
 
-impl<'b, 'a: 'b, F> AsRef<Expression<'a>> for (Expression<'a>, F) {
-    fn as_ref(&self) -> &Expression<'a> {
-        &self.0
+const INFINITY: usize = 1000000;
+trait FormattedSize {
+    fn size(&self, ctx: &mut Context, surrounded: bool) -> usize;
+}
+
+impl<'a> FormattedSize for Expression<'a> {
+    fn size(&self, ctx: &mut Context, surrounded: bool) -> usize {
+        let mut size = ctx.singleline_node_size(self);
+        if size <= INFINITY && surrounded {
+            if let Expression::KeyedElement(k) = self {
+                if let Some((k, _)) = &k.key_and_colon {
+                    size = ctx.singleline_node_size(k);
+                }
+            }
+        } else {
+            size = 0;
+        }
+
+        size
     }
 }
 
-impl<'b, 'a: 'b> AsRef<Expression<'a>> for Expression<'a> {
-    fn as_ref(&self) -> &Expression<'a> {
-        &self
+impl<'a, W: io::Write> FormatWithKeyElem<W> for Expression<'a> {
+    fn format_with_ke(
+        &self,
+        w: &mut W,
+        ctx: &mut Context,
+        use_vtab_for_ke: bool,
+        depth: usize,
+    ) -> io::Result<()> {
+        match self {
+            Expression::KeyedElement(k) if use_vtab_for_ke && k.key_and_colon.is_some() => {
+                if let Some((k, _)) = &k.key_and_colon {
+                    k.format(w, ctx)?;
+                    Token::Colon.format(w, ctx)?;
+                    w.write(&[VTAB])?;
+                }
+                k.elem.format(w, ctx)
+            }
+            _ => ExprFormatter {
+                depth,
+                ..ExprFormatter::new(&self)
+            }
+            .format(w, ctx),
+        }
+    }
+}
+
+impl<'a, W: io::Write> Formatter<W> for (Identifier<'a>, Pos) {
+    #[inline(always)]
+    fn format(&self, w: &mut W, ctx: &mut Context) -> io::Result<()> {
+        self.0.format(w, ctx)
+    }
+}
+
+impl<'a> Range for (Identifier<'a>, Pos) {
+    #[inline(always)]
+    fn start(&self) -> Pos {
+        self.0.start()
+    }
+
+    #[inline(always)]
+    fn end(&self) -> Pos {
+        self.0.end()
+    }
+}
+
+impl<'a> FormattedSize for (Identifier<'a>, Pos) {
+    #[inline(always)]
+    fn size(&self, ctx: &mut Context, s: bool) -> usize {
+        let size = ctx.singleline_node_size(self);
+        if size <= INFINITY && s { size } else { 0 }
+    }
+}
+
+impl<'a, W: io::Write> FormatWithKeyElem<W> for (Identifier<'a>, Pos) {
+    #[inline(always)]
+    fn format_with_ke(&self, w: &mut W, ctx: &mut Context, _: bool, _: usize) -> io::Result<()> {
+        self.0.format(w, ctx)
+    }
+}
+
+impl<'a, F> FormattedSize for (Expression<'a>, F) {
+    #[inline(always)]
+    fn size(&self, ctx: &mut Context, surrounded: bool) -> usize {
+        self.0.size(ctx, surrounded)
+    }
+}
+
+impl<'a, F> Range for (Expression<'a>, F) {
+    #[inline(always)]
+    fn start(&self) -> Pos {
+        self.0.start()
+    }
+
+    #[inline(always)]
+    fn end(&self) -> Pos {
+        self.0.end()
+    }
+}
+
+trait FormatWithKeyElem<W: io::Write> {
+    fn format_with_ke(
+        &self,
+        w: &mut W,
+        ctx: &mut Context,
+        use_vtab_for_ke: bool,
+        depth: usize,
+    ) -> io::Result<()>;
+}
+
+impl<'a, W: io::Write, F> Formatter<W> for (Expression<'a>, F) {
+    fn format(&self, w: &mut W, ctx: &mut Context) -> io::Result<()> {
+        self.0.format(w, ctx)
+    }
+}
+
+impl<'a, W: io::Write, F> FormatWithKeyElem<W> for (Expression<'a>, F) {
+    fn format_with_ke(
+        &self,
+        w: &mut W,
+        ctx: &mut Context,
+        use_vtab_for_ke: bool,
+        depth: usize,
+    ) -> io::Result<()> {
+        self.0.format_with_ke(w, ctx, use_vtab_for_ke, depth)
     }
 }
 
@@ -3371,7 +3488,11 @@ impl<'b, 'a: 'b> AsRef<Expression<'a>> for Expression<'a> {
 //
 // only do the indent when new line happened after one expr
 #[derive(Debug)]
-struct ListExprFormatter<'a, T: AsRef<Expression<'a>>> {
+struct ListExprFormatter<
+    'a,
+    W: io::Write,
+    T: Debug + FormattedSize + Formatter<W> + FormatWithKeyElem<W> + Range,
+> {
     expr: &'a [T], // MUST NOT empty
     prev_break: i32,
     prev_size: usize,
@@ -3384,9 +3505,13 @@ struct ListExprFormatter<'a, T: AsRef<Expression<'a>>> {
 
     prev_pos: Option<Pos>,
     next_pos: Option<Pos>,
+
+    mark: std::marker::PhantomData<W>,
 }
 
-impl<'a, T: AsRef<Expression<'a>>> ListExprFormatter<'a, T> {
+impl<'a, W: io::Write, T: Debug + FormatWithKeyElem<W> + Formatter<W> + FormattedSize + Range>
+    ListExprFormatter<'a, W, T>
+{
     fn new(expr: &'a [T]) -> Self {
         ListExprFormatter {
             expr,
@@ -3400,22 +3525,14 @@ impl<'a, T: AsRef<Expression<'a>>> ListExprFormatter<'a, T> {
             next_pos: None,
             add_comma_when_newline_of_last_expr: false,
             indent_when_newline: 1,
+            mark: std::marker::PhantomData,
         }
     }
 
-    fn calc_node_size(&mut self, e: &Expression<'a>, ctx: &mut Context) {
+    fn calc_node_size(&mut self, e: &T, ctx: &mut Context) {
         self.prev_size = self.size;
 
-        self.size = ctx.singleline_node_size(e);
-        if self.size <= Self::INFINITY && self.prev_pos.is_some() && self.next_pos.is_some() {
-            if let Expression::KeyedElement(k) = e {
-                if let Some((k, _)) = &k.key_and_colon {
-                    self.size = ctx.singleline_node_size(k);
-                }
-            }
-        } else {
-            self.size = 0;
-        }
+        self.size = e.size(ctx, self.prev_pos.is_some() && self.next_pos.is_some());
 
         if self.prev_size > 0 {
             self.count += 1;
@@ -3428,8 +3545,6 @@ impl<'a, T: AsRef<Expression<'a>>> ListExprFormatter<'a, T> {
         self.lnsum = 0.0;
     }
 
-    const INFINITY: usize = 1000000;
-
     fn use_ff(&mut self, cur: i32) -> bool {
         if self.prev_break + 1 < cur {
             // multi expression in one line
@@ -3440,7 +3555,7 @@ impl<'a, T: AsRef<Expression<'a>>> ListExprFormatter<'a, T> {
             return false;
         }
 
-        if self.size > Self::INFINITY {
+        if self.size > INFINITY {
             return true;
         }
 
@@ -3461,14 +3576,14 @@ impl<'a, T: AsRef<Expression<'a>>> ListExprFormatter<'a, T> {
         }
     }
 
-    fn try_write_newlines<W: io::Write>(
+    fn try_write_newlines(
         &mut self,
         w: &mut W,
         ctx: &mut Context,
         pos: &Pos,
         cur_index: i32,
     ) -> io::Result<bool> {
-        let newline_count = pos.lineno - self.expr[cur_index as usize - 1].as_ref().end().lineno;
+        let newline_count = pos.lineno - self.expr[cur_index as usize - 1].end().lineno;
         if newline_count > 0 {
             w.write(b",")?;
             let use_ff = self.use_ff(cur_index);
@@ -3485,19 +3600,19 @@ impl<'a, T: AsRef<Expression<'a>>> ListExprFormatter<'a, T> {
         }
     }
 
-    fn format<W: io::Write>(&mut self, w: &mut W, ctx: &mut Context) -> io::Result<bool> {
-        let first = &self.expr[0].as_ref();
+    fn format(&mut self, w: &mut W, ctx: &mut Context) -> io::Result<bool> {
+        let first = &self.expr[0];
         let line = first.start().lineno;
 
         // same line
         if let Some(Pos { lineno, .. }) = self.prev_pos
             && lineno == line
-            && line == self.expr[self.expr.len() - 1].as_ref().start().lineno
+            && line == self.expr[self.expr.len() - 1].start().lineno
         {
             self.format_expr(w, first, ctx, false)?;
             for e in &self.expr[1..] {
                 w.write(b", ")?;
-                self.format_expr(w, e.as_ref(), ctx, false)?;
+                self.format_expr(w, e, ctx, false)?;
             }
             return Ok(true);
         }
@@ -3520,13 +3635,13 @@ impl<'a, T: AsRef<Expression<'a>>> ListExprFormatter<'a, T> {
             w,
             first,
             ctx,
-            need_newline && self.expr.len() > 1 && self.size > 0 && self.size <= Self::INFINITY,
+            need_newline && self.expr.len() > 1 && self.size > 0 && self.size <= INFINITY,
         )?;
 
         for (i, e) in self.expr.iter().skip(1).enumerate() {
-            self.calc_node_size(e.as_ref(), ctx);
+            self.calc_node_size(e, ctx);
             need_newline = false;
-            if self.try_write_newlines(w, ctx, &e.as_ref().start(), (i + 1) as i32)? {
+            if self.try_write_newlines(w, ctx, &e.start(), (i + 1) as i32)? {
                 need_newline = true;
                 if !do_indent {
                     do_indent = true;
@@ -3536,9 +3651,9 @@ impl<'a, T: AsRef<Expression<'a>>> ListExprFormatter<'a, T> {
 
             self.format_expr(
                 w,
-                e.as_ref(),
+                e,
                 ctx,
-                need_newline && self.size > 0 && self.size <= Self::INFINITY,
+                need_newline && self.size > 0 && self.size <= INFINITY,
             )?;
         }
 
@@ -3547,7 +3662,7 @@ impl<'a, T: AsRef<Expression<'a>>> ListExprFormatter<'a, T> {
         }
 
         if let Some(Pos { lineno, .. }) = self.next_pos
-            && self.expr[self.expr.len() - 1].as_ref().end().lineno < lineno
+            && self.expr[self.expr.len() - 1].end().lineno < lineno
             && self.add_comma_when_newline_of_last_expr
         {
             w.write(b",")?;
@@ -3557,37 +3672,16 @@ impl<'a, T: AsRef<Expression<'a>>> ListExprFormatter<'a, T> {
         Ok(false)
     }
 
-    fn format_keyed_ele<W: io::Write>(
-        ke: &'a KeyedElement,
-        w: &mut W,
-        ctx: &mut Context,
-    ) -> io::Result<()> {
-        if let Some((k, _)) = &ke.key_and_colon {
-            k.format(w, ctx)?;
-            Token::Colon.format(w, ctx)?;
-            w.write(&[VTAB])?;
-        }
-        ke.elem.format(w, ctx)
-    }
-
-    fn format_expr<W: io::Write>(
+    #[inline(always)]
+    fn format_expr(
         &self,
         w: &mut W,
-        expr: &'a Expression<'a>,
+        expr: &'a T,
         ctx: &mut Context,
         use_vtab_for_ke: bool,
     ) -> io::Result<()> {
         ctx.sep_before_line_comment = &[VTAB];
-        match expr {
-            Expression::KeyedElement(k) if use_vtab_for_ke && k.key_and_colon.is_some() => {
-                Self::format_keyed_ele(k, w, ctx)
-            }
-            _ => ExprFormatter {
-                depth: self.depth,
-                ..ExprFormatter::new(expr)
-            }
-            .format(w, ctx),
-        }
+        expr.format_with_ke(w, ctx, use_vtab_for_ke, self.depth)
     }
 }
 
@@ -3896,7 +3990,7 @@ impl<'a> FieldDeclOption<'a> {
 
 impl<'a> StructType<'_> {
     #[inline(always)]
-    fn can_place_one_line<T: Formatter<SingleLineNodeSizeWriter> + Range>(
+    fn can_place_one_line<T: Formatter<SingleLineNodeSizeWriter> + Range + Debug>(
         typ: &T,
         name_size: usize,
         ctx: &mut Context,
@@ -4160,5 +4254,18 @@ mod test {
     #[test]
     fn gofmt() {
         test_from_files("tests_data");
+    }
+
+    #[test]
+    fn bad_case() {
+        let s = r#"var (       V9  = T{
+                f2: 1, F1: "hello"}
+        V10 = T{
+                F1: "hello", f2: 1,
+                f3: 2,
+                F4: "world", f5: 3,
+        })"#;
+
+        println!("{}", str::from_utf8(format(s).unwrap().as_slice()).unwrap());
     }
 }

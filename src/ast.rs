@@ -204,14 +204,14 @@ pub(crate) struct Identifier<'a> {
     pub pos: Pos,
 }
 
-impl<'a> Identifier<'a> {
+impl<'a> Range for Identifier<'a> {
     #[inline(always)]
-    pub(crate) fn start(&self) -> Pos {
+    fn start(&self) -> Pos {
         self.pos
     }
 
     #[inline(always)]
-    pub(crate) fn end(&self) -> Pos {
+    fn end(&self) -> Pos {
         Pos {
             col: self.pos.col + self.name.len() as u32,
             lineno: self.pos.lineno,
