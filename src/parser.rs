@@ -2269,13 +2269,13 @@ impl<'a, T: FnMut(usize, usize, &str), S: Source<'a>> Parser<'a, T, S> {
                                 }))
                             }
                         }
-                        t => panic!("pexpr:{}", t),
-                        // t => {
-                        //     return Err(anyhow!(Error::CannotProcToken {
-                        //         token: t,
-                        //         context: "pexpr dot"
-                        //     }));
-                        // }
+                        // tok => panic!("pexpr:{}", tok),
+                        tok => {
+                            return Err(anyhow!(Error::CannotProcToken {
+                                token: tok,
+                                context: "pexpr dot"
+                            }));
+                        }
                     }
                 }
                 Token::Lbrack => {
@@ -2363,6 +2363,16 @@ impl<'a, T: FnMut(usize, usize, &str), S: Source<'a>> Parser<'a, T, S> {
                             }
                             tok @ Token::Rparen => args.push((
                                 expr,
+                                TokenPos {
+                                    tok,
+                                    pos: self.pos(),
+                                },
+                            )),
+                            tok @ Token::Lbrace => args.push((
+                                Expression::CompositeLit(Box::new(CompositeLit {
+                                    typ: expr,
+                                    value: self.literal_value()?,
+                                })),
                                 TokenPos {
                                     tok,
                                     pos: self.pos(),

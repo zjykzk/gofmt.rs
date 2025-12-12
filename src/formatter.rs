@@ -4258,13 +4258,9 @@ mod test {
 
     #[test]
     fn bad_case() {
-        let s = r#"var (       V9  = T{
-                f2: 1, F1: "hello"}
-        V10 = T{
-                F1: "hello", f2: 1,
-                f3: 2,
-                F4: "world", f5: 3,
-        })"#;
+        let s = r#"
+	rocketmq.		NewConsumer(&rocketmq.ConsumerParam[*urisOfComment]{})
+"#;
 
         println!("{}", str::from_utf8(format(s).unwrap().as_slice()).unwrap());
     }
